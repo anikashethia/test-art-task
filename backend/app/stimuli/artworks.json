@@ -1,0 +1,67 @@
+[
+  {
+    "id": 1,
+    "title": "The Floor Scrapers",
+    "artist": "Gustave Caillebotte",
+    "year": 1875,
+    "medium": "Oil on canvas",
+    "style": "Impressionism",
+    "wikiart_url": "https://www.wikiart.org/en/gustave-caillebotte/the-floor-scrapers-1875",
+    "image_url": "",
+    "expected_valence": 71,
+    "valence_category": "Liked",
+    "familiarity_risk": "Low"
+  },
+  {
+    "id": 2,
+    "title": "Paris Street; Rainy Day",
+    "artist": "Gustave Caillebotte",
+    "year": 1877,
+    "medium": "Oil on canvas",
+    "style": "Impressionism",
+    "wikiart_url": "https://www.wikiart.org/en/gustave-caillebotte/paris-street-rainy-day-1877",
+    "image_url": "",
+    "expected_valence": 70,
+    "valence_category": "Liked",
+    "familiarity_risk": "Medium"
+  },
+  {
+    "id": 3,
+    "title": "Bathers at Asnieres",
+    "artist": "Georges Seurat",
+    "year": 1884,
+    "medium": "Oil on canvas",
+    "style": "Post-Impressionism",
+    "wikiart_url": "https://www.wikiart.org/en/georges-seurat/bathers-at-asnieres-1884",
+    "image_url": "",
+    "expected_valence": 69,
+    "valence_category": "Liked",
+    "familiarity_risk": "Low"
+  },
+  {
+    "id": 4,
+    "title": "The Starry Night Over the Rhone",
+    "artist": "Vincent van Gogh",
+    "year": 1888,
+    "medium": "Oil on canvas",
+    "style": "Post-Impressionism",
+    "wikiart_url": "https://www.wikiart.org/en/vincent-van-gogh/the-starry-night-over-the-rhone-1888",
+    "image_url": "",
+    "expected_valence": 76,
+    "valence_category": "Liked",
+    "familiarity_risk": "Low"
+  },
+  {
+    "id": 5,
+    "title": "Abend im Café Bauer",
+    "artist": "Lesser Ury",
+    "year": 1898,
+    "medium": "Oil on canvas",
+    "style": "Impressionism",
+    "wikiart_url": "https://www.wikiart.org/en/lesser-ury/abend-im-caf-bauer-1898",
+    "image_url": "",
+    "expected_valence": 70,
+    "valence_category": "Liked",
+    "familiarity_risk": "Low"
+  }
+]
