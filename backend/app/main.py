@@ -26,7 +26,7 @@ load_dotenv()
 
 from .db import Base, engine, get_db
 from . import models
-from .stimuli import build_phase1_trials, build_phase2_trials, AGENT_CONDITIONS
+from .stimuli import build_trials, DEFAULT_PAIRS
 from .pilot import assign_participant_index, ParticipantCounter
 
 
@@ -79,7 +79,10 @@ def require_session_token(
 class CreateSessionBody(BaseModel):
     participant_id: str
     mode: Literal["pilot", "dev"] = "dev"
-    identities: str | None = None
+    friendly_pair: str | None = None
+    neutral_pair: str | None = None
+    friendly_control_pair: str | None = None
+    neutral_control_pair: str | None = None
     sc_session_id: str | None = None
 
 
@@ -87,8 +90,7 @@ class CreateSessionResponse(BaseModel):
     session_id: str
     session_token: str
     participant_index: int
-    phase2_trials: list[dict]
-    phase1_trials: list[dict]
+    trials: list[dict]
 
 
 class CreateBlockBody(BaseModel):
@@ -102,9 +104,13 @@ class CreateBlockResponse(BaseModel):
 class SubmitRatingBody(BaseModel):
     artwork_id: int
     rating: float = Field(ge=0, le=100)
-    agent_condition: str | None = None
-    agent_rating: float | None = None
-    is_rng: bool | None = None
+    rating_type: str | None = None
+    pair_condition: str | None = None
+    agent1_condition: str | None = None
+    agent2_condition: str | None = None
+    agent1_rating: float | None = None
+    agent2_rating: float | None = None
+    avg_rating: float | None = None
     artwork_onset_ms: float | None = None
     rating_rt_ms: float | None = None
     trial_index: int | None = None
@@ -145,20 +151,28 @@ def create_session(body: CreateSessionBody, db: DBSession = Depends(get_db)):
     else:
         participant_index = 0
 
-    phase1_trials = build_phase1_trials(participant_index)
-    phase2_trials = build_phase2_trials(participant_index)
+    def parse_pair(s: str | None, default: tuple) -> tuple[str, str]:
+        if s:
+            parts = [p.strip() for p in s.split(",") if p.strip()]
+            if len(parts) >= 2:
+                return (parts[0], parts[1])
+        return default
 
-    identity_order = None
-    if body.identities:
-        valid = [name.strip() for name in body.identities.split(",") if name.strip() in AGENT_CONDITIONS]
-        if valid:
-            identity_order = ",".join(valid)
+    import json as _json
+    pairs = {
+        "friendly":         parse_pair(body.friendly_pair,         DEFAULT_PAIRS["friendly"]),
+        "neutral":          parse_pair(body.neutral_pair,          DEFAULT_PAIRS["neutral"]),
+        "friendly_control": parse_pair(body.friendly_control_pair, DEFAULT_PAIRS["friendly_control"]),
+        "neutral_control":  parse_pair(body.neutral_control_pair,  DEFAULT_PAIRS["neutral_control"]),
+    }
+
+    trials = build_trials(participant_index, pairs)
 
     session = models.Session(
         participant_id=body.participant_id,
         mode=body.mode,
         condition_order=f"si_p{participant_index}",
-        identity_order=identity_order,
+        identity_order=_json.dumps({k: list(v) for k, v in pairs.items()}),
         sc_session_id=body.sc_session_id,
         monotonic_start_s=time.monotonic(),
     )
@@ -170,8 +184,7 @@ def create_session(body: CreateSessionBody, db: DBSession = Depends(get_db)):
         session_id=session.id,
         session_token=session.session_token,
         participant_index=participant_index,
-        phase1_trials=phase1_trials,
-        phase2_trials=phase2_trials,
+        trials=trials,
     )
 
 
@@ -213,9 +226,13 @@ def submit_rating(
         block_id=block_id,
         artwork_id=body.artwork_id,
         rating=body.rating,
-        agent_condition=body.agent_condition,
-        agent_rating=body.agent_rating,
-        is_rng=body.is_rng,
+        rating_type=body.rating_type,
+        pair_condition=body.pair_condition,
+        agent1_condition=body.agent1_condition,
+        agent2_condition=body.agent2_condition,
+        agent1_rating=body.agent1_rating,
+        agent2_rating=body.agent2_rating,
+        avg_rating=body.avg_rating,
         artwork_onset_ms=body.artwork_onset_ms,
         rating_rt_ms=body.rating_rt_ms,
         trial_index=body.trial_index,

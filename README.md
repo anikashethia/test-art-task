@@ -1,12 +1,12 @@
 # Social Influence Task
 
-Artwork rating task adapted from Welborn et al. (2016). Measures whether felt
-social connection with an AI agent modulates social influence susceptibility.
+Artwork rating task measuring social influence susceptibility. Participants
+rate each artwork, see the average rating of two named agents, then re-rate.
+Influence is operationalized as the shift toward the agents' average rating,
+normalised by the maximum possible shift.
 
-Runs **after** the social connection task in the same lab session. Participants
-rate artworks before (Phase 1) and after (Phase 2) seeing each agent's rating.
-Influence is operationalized as the shift toward the agent's rating, normalised
-by the maximum possible shift.
+Runs **after** the social connection task in the same lab session, with agent
+identities and pair assignments passed via URL parameters.
 
 ## Structure
 
@@ -41,37 +41,38 @@ social-influence-task/
 
 ## Task Design
 
-**Phase 1 — Baseline rating** (~7 min)
-- 50 artworks rated on a 0–100 continuous slider
-- No agent information shown
+**Trial structure** (per artwork, ~14 s average):
+1. **Initial rating** — participant rates artwork on 0–100 slider (self-paced, 10 s cap)
+2. **Feedback reveal** — average rating of two named agents shown for 4 s
+3. **Re-rating** — participant re-rates the same artwork (self-paced, 10 s cap)
+4. **Blank screen** — 500 ms between trials
 
-**Phase 2 — Influence task** (~15 min)
-- Same 50 artworks, randomly interleaved across agent conditions
-- Trial structure per artwork:
-  1. Artwork + agent rating reveal (4 s)
-  2. Participant re-rates on 0–100 slider (self-paced, ≤8 s)
-  3. ITI fixation cross (2–4 s jittered)
+If the participant does not respond within 10 s, an "Out of time" screen
+appears for 2 s and the trial advances without recording a rating.
 
-**12 conditions:**
-- 6 named agents: Alex, Sam, Casey, Jordan, Morgan, Riley
-- 6 RNG controls: RNG_1 through RNG_6 (displayed as "Another user")
+**4 pair-conditions** (each consisting of 2 named agents):
 
-Each RNG condition uses a different fixed seed so different RNG conditions
-produce different ratings for the same artwork, but the same rating across
-participants.
+| Condition | Agents |
+|---|---|
+| `friendly` | The 2 agents the participant felt connected to |
+| `neutral` | The 2 agents the participant felt neutral toward |
+| `friendly_control` | Gender/race-matched controls for the friendly pair |
+| `neutral_control` | Gender/race-matched controls for the neutral pair |
 
 **Counterbalancing**
 - Each artwork appears in exactly one condition per participant
-- Condition assignment: `(artwork_id − 1 + participant_index) mod 12`
-- Every 12 participants = 1 complete rotation
-- 50 artworks / 12 conditions → conditions 0–1 get 5 artworks, rest get 4
+- Condition assignment: `(artwork_id − 1 + participant_index) mod 4`
+- Every 4 participants = 1 complete rotation
+- Designed for multiples of 4 artworks (e.g. 120 → 30 per condition)
 
 **Influence score (computed at analysis time)**
 ```
-Δ = phase2_rating − phase1_rating
-normalised_influence = Δ / |agent_rating − phase1_rating|
+Δ = rerate − initial_rating
+normalised_influence = Δ / |avg_agent_rating − initial_rating|
 ```
-Values: 0 = no influence, 1 = full conformity, negative = reactance.
+Values: 0 = no influence, 1 = full conformity, negative = contrast/reactance.
+
+**Estimated duration:** ~30 min for 120 artworks (range 20–40 min depending on pace).
 
 ## Setup
 
@@ -143,41 +144,105 @@ Download images from WikiArt and host them. Options:
 ## Prolific Study URL
 
 ```
-https://yourstudy.com/?mode=pilot&PROLIFIC_PID={{%PROLIFIC_PID%}}&identities=Alex,Sam,Casey,Jordan,Morgan,Riley&sc_session_id=<id>
+https://yourstudy.com/?mode=pilot
+  &PROLIFIC_PID={{%PROLIFIC_PID%}}
+  &friendly=Alex,Sam
+  &neutral=Casey,Jordan
+  &friendly_control=Morgan,Riley
+  &neutral_control=Taylor,Drew
+  &sc_session_id=<id>
 ```
 
-- `identities`: comma-separated agent names from the social connection task,
-  so Phase 2 labels match the agents the participant already interacted with.
-- `sc_session_id`: session ID from the social connection task, for cross-task
-  data linkage.
+- `friendly` / `neutral`: comma-separated pair of agent names the participant
+  interacted with in the social connection task (friendly and neutral conditions).
+- `friendly_control` / `neutral_control`: gender/race-matched control pairs.
+- `sc_session_id`: session ID from the social connection task for cross-task linkage.
 
-## Data
+All pair parameters fall back to defaults if omitted (useful for dev testing).
 
-All data is stored in SQLite (`social_influence.db`). Key tables:
+## Behavioral Outputs
 
-| Table    | Contents |
-|----------|----------|
-| sessions | One row per participant visit (includes `sc_session_id` for cross-task linkage) |
-| blocks   | One per phase (phase=1 baseline, phase=2 influence) |
-| ratings  | Every artwork rating with timing and `is_rng` flag |
-| events   | jsPsych timeline events with ms timestamps |
+All data is stored in SQLite (`social_influence.db`). The file is gitignored
+and created fresh on first backend startup.
 
-Export ratings for analysis:
+### Tables
+
+**`sessions`** — one row per participant visit
+
+| Column | Description |
+|---|---|
+| `participant_id` | Prolific PID (or `DEV_USER` in dev mode) |
+| `mode` | `pilot` or `dev` |
+| `condition_order` | `si_p{index}` — which counterbalancing rotation |
+| `identity_order` | JSON object mapping condition → [agent1, agent2] for all 4 pairs |
+| `sc_session_id` | Session ID from the social connection task (cross-task linkage) |
+| `started_at` | UTC timestamp when session was created |
+| `ended_at` | UTC timestamp when `completeSession` was called (null if incomplete) |
+
+**`blocks`** — one row per session (single block, phase=1)
+
+**`ratings`** — two rows per artwork per participant
+
+| Column | Initial rating | Re-rating |
+|---|---|---|
+| `rating_type` | `"initial"` | `"rerate"` |
+| `artwork_id` | ✓ | ✓ |
+| `rating` | participant's rating | participant's re-rating |
+| `pair_condition` | null | `friendly` / `neutral` / `friendly_control` / `neutral_control` |
+| `agent1_condition` | null | name of first agent in pair |
+| `agent2_condition` | null | name of second agent in pair |
+| `agent1_rating` | null | first agent's pre-set rating for this artwork |
+| `agent2_rating` | null | second agent's pre-set rating for this artwork |
+| `avg_rating` | null | average of agent1 and agent2 ratings (shown to participant) |
+| `artwork_onset_ms` | ms since session start when screen appeared | same |
+| `rating_rt_ms` | reaction time from screen onset to submission | same |
+| `trial_index` | position in the randomised trial order | same |
+
+**`events`** — full timestamped jsPsych event log
+
+| Event type | When fired |
+|---|---|
+| `instructions_shown` / `instructions_dismissed` | instruction screen |
+| `task_start` | Begin clicked |
+| `initial_rating_onset` | initial rating screen appears |
+| `initial_rating_response` | initial rating submitted |
+| `initial_rating_missed` | 10 s cap reached without response |
+| `reveal_onset` / `reveal_end` | feedback screen start/end |
+| `rerate_response` | re-rating submitted |
+| `rerate_missed` | 10 s cap reached without response |
+| `task_end` / `timeline_complete` | end screen |
+
+### Core analysis query
+
 ```sql
 SELECT
   s.participant_id,
-  s.condition_order,
   s.sc_session_id,
-  r.artwork_id,
-  b.phase,
-  r.rating,
-  r.agent_condition,
-  r.agent_rating,
-  r.is_rng,
-  r.rating_rt_ms,
-  r.trial_index
-FROM ratings r
-JOIN blocks b ON r.block_id = b.id
+  s.condition_order,
+  i.artwork_id,
+  i.trial_index,
+  i.rating                                          AS initial_rating,
+  i.rating_rt_ms                                    AS initial_rt_ms,
+  r.rating                                          AS rerate,
+  r.rating_rt_ms                                    AS rerate_rt_ms,
+  r.pair_condition,
+  r.agent1_condition,
+  r.agent2_condition,
+  r.agent1_rating,
+  r.agent2_rating,
+  r.avg_rating,
+  (r.rating - i.rating)                             AS delta,
+  (r.rating - i.rating)
+    / NULLIF(ABS(r.avg_rating - i.rating), 0)       AS norm_influence
+FROM ratings i
+JOIN ratings r  ON i.block_id = r.block_id
+                AND i.artwork_id = r.artwork_id
+                AND i.rating_type = 'initial'
+                AND r.rating_type = 'rerate'
+JOIN blocks b   ON i.block_id = b.id
 JOIN sessions s ON b.session_id = s.id
-ORDER BY s.participant_id, b.phase, r.trial_index;
+ORDER BY s.participant_id, i.trial_index;
 ```
+
+`norm_influence` is NULL when the participant's initial rating exactly matches
+the average shown (no room to move), and should be excluded from analysis.

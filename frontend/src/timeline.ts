@@ -21,8 +21,7 @@ import {
   createBlock,
   submitRating,
   postEvent,
-  type Artwork,
-  type Phase2Trial,
+  type Trial,
   type Mode,
 } from "./api";
 
@@ -32,12 +31,9 @@ export type TaskContext = {
   sessionId: string;
   token: string;
   mode: Mode;
-  phase1Trials: Artwork[];
-  phase2Trials: Phase2Trial[];
+  trials: Trial[];
   revealDurationMs?: number;
   maxRatingMs?: number;
-  itiMinMs?: number;
-  itiMaxMs?: number;
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -52,13 +48,10 @@ function logEvent(
     .catch((err) => console.error(`[timeline] failed to log ${type}`, err));
 }
 
-function jitteredIti(minMs: number, maxMs: number): number {
-  return Math.round(minMs + Math.random() * (maxMs - minMs));
-}
 
 function sliderHtml(stimulus: string): string {
   return `
-    <div style="max-width:38rem;margin:0 auto;text-align:center;">
+    <div style="max-width:50rem;margin:0 auto;text-align:center;">
       ${stimulus}
       <p style="font-size:1rem;color:#475569;margin-bottom:1rem;">
         How much do you like this artwork?
@@ -68,14 +61,16 @@ function sliderHtml(stimulus: string): string {
 }
 
 function artworkImageHtml(trial: Artwork, size: "md" | "lg" = "lg"): string {
-  const maxW = size === "lg" ? "360px" : "240px";
+  const maxW = size === "lg" ? "600px" : "480px";
+  const maxH = size === "lg" ? "480px" : "360px";
+  const placeholderH = size === "lg" ? "360px" : "280px";
   if (trial.image_url) {
     return `<img src="${trial.image_url}"
                  alt="${trial.title}"
-                 style="max-width:${maxW};max-height:280px;object-fit:contain;border-radius:4px;margin-bottom:0.75rem;">`;
+                 style="max-width:${maxW};max-height:${maxH};object-fit:contain;border-radius:4px;margin:0 auto 0.75rem;display:block;">`;
   }
   return `
-    <div style="width:${maxW};height:220px;background:#f1f5f9;border:1px solid #e2e8f0;
+    <div style="width:${maxW};max-width:100%;height:${placeholderH};background:#f1f5f9;border:1px solid #e2e8f0;
                 border-radius:4px;display:flex;flex-direction:column;align-items:center;
                 justify-content:center;margin:0 auto 0.75rem;color:#94a3b8;font-size:13px;">
       <div style="font-size:2rem;margin-bottom:0.5rem;">🖼</div>
@@ -85,142 +80,96 @@ function artworkImageHtml(trial: Artwork, size: "md" | "lg" = "lg"): string {
   `;
 }
 
-function agentRatingBarHtml(agentName: string, agentRating: number, isRng: boolean): string {
-  const label = isRng ? "Another user" : agentName;
-  const pct = agentRating;
+function agentPairRevealHtml(agent1: string, agent2: string, avgRating: number): string {
+  const avatar = `
+    <div style="width:80px;height:80px;border-radius:50%;background:#e2e8f0;border:2px solid #cbd5e1;
+                margin:0 auto 0.5rem;display:flex;align-items:center;justify-content:center;
+                font-size:2.2rem;color:#94a3b8;">
+      👤
+    </div>
+  `;
   return `
-    <div style="max-width:360px;margin:0 auto 1rem;background:#f8fafc;border:1px solid #e2e8f0;
-                border-radius:8px;padding:12px 16px;">
-      <div style="font-size:13px;color:#475569;margin-bottom:6px;">
-        <strong>${label}</strong> rated this artwork:
-        <span style="font-size:16px;font-weight:600;color:#1e293b;margin-left:8px;">${agentRating}</span>
-        <span style="font-size:11px;color:#94a3b8;"> / 100</span>
+    <div style="display:flex;gap:3rem;justify-content:center;margin:1.25rem 0 1.5rem;">
+      <div style="text-align:center;">
+        ${avatar}
+        <div style="font-size:0.95rem;font-weight:600;color:#334155;">${agent1}</div>
       </div>
-      <div style="height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;">
-        <div style="width:${pct}%;height:100%;background:#475569;border-radius:4px;"></div>
+      <div style="text-align:center;">
+        ${avatar}
+        <div style="font-size:0.95rem;font-weight:600;color:#334155;">${agent2}</div>
       </div>
-      <div style="display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;margin-top:3px;">
-        <span>0</span><span>100</span>
-      </div>
+    </div>
+    <div style="text-align:center;font-size:1rem;color:#475569;">
+      The average of <strong>${agent1}</strong> and <strong>${agent2}</strong>'s rating is
+      <span style="font-size:2rem;font-weight:700;color:#1e293b;margin-left:0.3rem;">${avgRating}</span>
+      <span style="font-size:0.85rem;color:#94a3b8;"> / 100</span>
     </div>
   `;
 }
 
-// ── Phase 1: Baseline Rating ──────────────────────────────────────────────────
-
-function buildPhase1Trials(ctx: TaskContext, blockId: string, _jsPsych: JsPsych) {
-  const maxRatingMs = ctx.maxRatingMs ?? 8000;
-  const itiMin = ctx.itiMinMs ?? 2000;
-  const itiMax = ctx.itiMaxMs ?? 4000;
-
-  return ctx.phase1Trials.flatMap((trial) => {
-    let artworkOnsetMs: number | null = null;
-
-    const ratingTrial = {
-      type: HtmlSliderResponse,
-      stimulus: sliderHtml(artworkImageHtml(trial)),
-      labels: ["0", "100"],
-      min: 0,
-      max: 100,
-      slider_start: 50,
-      require_movement: true,
-      button_label: "Submit",
-      trial_duration: maxRatingMs,
-      on_start: () => {
-        artworkOnsetMs = performance.now();
-        logEvent(ctx, "phase1_artwork_onset", { artwork_id: trial.artwork_id, trial_index: trial.trial_index }, blockId);
-      },
-      on_finish: async (data: { response: number; rt: number }) => {
-        const rt = data.rt;
-        logEvent(ctx, "phase1_rating_response", {
-          artwork_id: trial.artwork_id,
-          rating: data.response,
-          rt_ms: rt,
-          trial_index: trial.trial_index,
-        }, blockId);
-        await submitRating(ctx.sessionId, ctx.token, blockId, {
-          artwork_id: trial.artwork_id,
-          rating: data.response,
-          artwork_onset_ms: artworkOnsetMs ?? undefined,
-          rating_rt_ms: rt,
-          trial_index: trial.trial_index,
-        }).catch(console.error);
-      },
-    };
-
-    const itiTrial = {
-      type: HtmlKeyboardResponse,
-      stimulus: `<div style="text-align:center;font-size:3rem;color:#64748b;">+</div>`,
-      choices: "NO_KEYS" as const,
-      trial_duration: jitteredIti(itiMin, itiMax),
-    };
-
-    return [ratingTrial, itiTrial];
-  });
+function addSliderValueDisplay() {
+  const slider = document.querySelector('input[type="range"]') as HTMLInputElement | null;
+  if (!slider) return;
+  const display = document.createElement('div');
+  display.style.cssText = 'text-align:center;font-size:2rem;font-weight:600;color:#1e293b;margin:0.5rem 0 0.25rem;min-height:2.5rem;';
+  display.textContent = slider.value;
+  slider.parentNode!.insertBefore(display, slider.nextSibling);
+  slider.addEventListener('input', () => { display.textContent = slider.value; });
 }
 
-// ── Phase 2: Influence Task ───────────────────────────────────────────────────
+// ── Trials (rate → reveal → re-rate → ITI) ───────────────────────────────────
 
-function buildPhase2Trials(ctx: TaskContext, blockId: string, _jsPsych: JsPsych) {
+function buildTrials(ctx: TaskContext, blockId: string, _jsPsych: JsPsych) {
   const revealMs = ctx.revealDurationMs ?? 4000;
-  const maxRatingMs = ctx.maxRatingMs ?? 8000;
-  const itiMin = ctx.itiMinMs ?? 2000;
-  const itiMax = ctx.itiMaxMs ?? 4000;
+  const maxRatingMs = ctx.maxRatingMs ?? 10000;
 
-  return ctx.phase2Trials.flatMap((trial) => {
+  const missedStimulus = `
+    <div style="position:fixed;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;">
+      <div style="text-align:center;color:#94a3b8;">
+        <p style="font-size:1.3rem;font-weight:500;">Out of time</p>
+        <p style="font-size:0.9rem;margin-top:0.5rem;">Please try to respond before the timer runs out.</p>
+      </div>
+    </div>
+  `;
+
+  return ctx.trials.flatMap((trial) => {
     let artworkOnsetMs: number | null = null;
+    let rerateOnsetMs: number | null = null;
+    let initialMissed = false;
+    let rerateMissed = false;
 
-    const revealTrial = {
-      type: HtmlKeyboardResponse,
-      stimulus: `
-        <div style="max-width:38rem;margin:0 auto;text-align:center;">
-          ${artworkImageHtml(trial)}
-          ${agentRatingBarHtml(trial.agent_condition, trial.agent_rating, trial.is_rng)}
-        </div>
-      `,
-      choices: "NO_KEYS" as const,
-      trial_duration: revealMs,
-      on_start: () => {
-        artworkOnsetMs = performance.now();
-        logEvent(ctx, "phase2_reveal_onset", {
-          artwork_id: trial.artwork_id,
-          agent_condition: trial.agent_condition,
-          agent_rating: trial.agent_rating,
-          is_rng: trial.is_rng,
-          trial_index: trial.trial_index,
-        }, blockId);
-      },
-      on_finish: () => {
-        logEvent(ctx, "phase2_reveal_end", { artwork_id: trial.artwork_id }, blockId);
-      },
-    };
-
-    const ratingTrial = {
+    const initialRatingTrial = {
       type: HtmlSliderResponse,
-      stimulus: sliderHtml(artworkImageHtml(trial, "md")),
-      labels: ["0", "100"],
+      stimulus: sliderHtml(artworkImageHtml(trial)),
+      labels: ["0<br>Not at all", "100<br>Extremely"],
       min: 0,
       max: 100,
       slider_start: 50,
       require_movement: true,
       button_label: "Submit",
       trial_duration: maxRatingMs,
-      on_finish: async (data: { response: number; rt: number }) => {
-        logEvent(ctx, "phase2_rating_response", {
+      on_load: addSliderValueDisplay,
+      on_start: () => {
+        artworkOnsetMs = performance.now();
+        logEvent(ctx, "initial_rating_onset", { artwork_id: trial.artwork_id, trial_index: trial.trial_index }, blockId);
+      },
+      on_finish: async (data: { response: number | null; rt: number | null }) => {
+        if (data.response === null) {
+          initialMissed = true;
+          logEvent(ctx, "initial_rating_missed", { artwork_id: trial.artwork_id, trial_index: trial.trial_index }, blockId);
+          return;
+        }
+        initialMissed = false;
+        logEvent(ctx, "initial_rating_response", {
           artwork_id: trial.artwork_id,
           rating: data.response,
-          agent_condition: trial.agent_condition,
-          agent_rating: trial.agent_rating,
-          is_rng: trial.is_rng,
           rt_ms: data.rt,
           trial_index: trial.trial_index,
         }, blockId);
         await submitRating(ctx.sessionId, ctx.token, blockId, {
           artwork_id: trial.artwork_id,
           rating: data.response,
-          agent_condition: trial.agent_condition,
-          agent_rating: trial.agent_rating,
-          is_rng: trial.is_rng,
+          rating_type: "initial",
           artwork_onset_ms: artworkOnsetMs ?? undefined,
           rating_rt_ms: data.rt,
           trial_index: trial.trial_index,
@@ -228,91 +177,135 @@ function buildPhase2Trials(ctx: TaskContext, blockId: string, _jsPsych: JsPsych)
       },
     };
 
-    const itiTrial = {
+    const revealTrial = {
       type: HtmlKeyboardResponse,
-      stimulus: `<div style="text-align:center;font-size:3rem;color:#64748b;">+</div>`,
+      stimulus: `
+        <div style="position:fixed;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;">
+          <div style="max-width:50rem;width:100%;text-align:center;padding:0 1rem;">
+            ${artworkImageHtml(trial)}
+            ${agentPairRevealHtml(trial.agent1, trial.agent2, trial.avg_rating)}
+          </div>
+        </div>
+      `,
       choices: "NO_KEYS" as const,
-      trial_duration: jitteredIti(itiMin, itiMax),
-      on_start: () => logEvent(ctx, "iti_onset", { artwork_id: trial.artwork_id }, blockId),
+      trial_duration: revealMs,
+      on_start: () => {
+        logEvent(ctx, "reveal_onset", {
+          artwork_id: trial.artwork_id,
+          pair_condition: trial.pair_condition,
+          agent1: trial.agent1,
+          agent2: trial.agent2,
+          avg_rating: trial.avg_rating,
+          trial_index: trial.trial_index,
+        }, blockId);
+      },
+      on_finish: () => {
+        logEvent(ctx, "reveal_end", { artwork_id: trial.artwork_id }, blockId);
+      },
     };
 
-    return [revealTrial, ratingTrial, itiTrial];
+    const reratingTrial = {
+      type: HtmlSliderResponse,
+      stimulus: sliderHtml(artworkImageHtml(trial, "md")),
+      labels: ["0<br>Not at all", "100<br>Extremely"],
+      min: 0,
+      max: 100,
+      slider_start: 50,
+      require_movement: true,
+      button_label: "Submit",
+      trial_duration: maxRatingMs,
+      on_load: addSliderValueDisplay,
+      on_start: () => { rerateOnsetMs = performance.now(); },
+      on_finish: async (data: { response: number | null; rt: number | null }) => {
+        if (data.response === null) {
+          rerateMissed = true;
+          logEvent(ctx, "rerate_missed", { artwork_id: trial.artwork_id, trial_index: trial.trial_index }, blockId);
+          return;
+        }
+        rerateMissed = false;
+        logEvent(ctx, "rerate_response", {
+          artwork_id: trial.artwork_id,
+          rating: data.response,
+          pair_condition: trial.pair_condition,
+          agent1: trial.agent1,
+          agent2: trial.agent2,
+          avg_rating: trial.avg_rating,
+          rt_ms: data.rt,
+          trial_index: trial.trial_index,
+        }, blockId);
+        await submitRating(ctx.sessionId, ctx.token, blockId, {
+          artwork_id: trial.artwork_id,
+          rating: data.response,
+          rating_type: "rerate",
+          pair_condition: trial.pair_condition,
+          agent1_condition: trial.agent1,
+          agent2_condition: trial.agent2,
+          agent1_rating: trial.agent1_rating,
+          agent2_rating: trial.agent2_rating,
+          avg_rating: trial.avg_rating,
+          artwork_onset_ms: rerateOnsetMs ?? undefined,
+          rating_rt_ms: data.rt,
+          trial_index: trial.trial_index,
+        }).catch(console.error);
+      },
+    };
+
+    const blankScreen = {
+      type: HtmlKeyboardResponse,
+      stimulus: "",
+      choices: "NO_KEYS" as const,
+      trial_duration: 500,
+    };
+
+    return [
+      initialRatingTrial,
+      { timeline: [{ type: HtmlKeyboardResponse, stimulus: missedStimulus, choices: "NO_KEYS" as const, trial_duration: 2000 }], conditional_function: () => initialMissed },
+      revealTrial,
+      reratingTrial,
+      { timeline: [{ type: HtmlKeyboardResponse, stimulus: missedStimulus, choices: "NO_KEYS" as const, trial_duration: 2000 }], conditional_function: () => rerateMissed },
+      blankScreen,
+    ];
   });
 }
 
 // ── Full Timeline Builder ─────────────────────────────────────────────────────
 
 export async function buildTimeline(ctx: TaskContext, _jsPsych: JsPsych) {
-  const phase1Block = await createBlock(ctx.sessionId, ctx.token, 1);
-  const phase2Block = await createBlock(ctx.sessionId, ctx.token, 2);
+  const block = await createBlock(ctx.sessionId, ctx.token, 1);
+  const trials = buildTrials(ctx, block.block_id, _jsPsych);
 
-  const phase1Trials = buildPhase1Trials(ctx, phase1Block.block_id, _jsPsych);
-  const phase2Trials = buildPhase2Trials(ctx, phase2Block.block_id, _jsPsych);
-
-  const phase1Instructions = {
+  const instructions = {
     type: HtmlButtonResponse,
     stimulus: `
       <div style="max-width:34rem;margin:0 auto;text-align:left;">
         <h1 style="font-size:1.4rem;font-weight:600;margin-bottom:1rem;text-align:center;">
-          Artwork Rating Task — Part 1
+          Artwork Rating Task
         </h1>
         <p style="margin-bottom:1rem;">
-          You'll see a series of artworks. For each one, please rate how much you like it
-          on a scale from <strong>0</strong> (not at all) to <strong>100</strong> (extremely).
+          You'll see a series of artworks. For each one:
         </p>
-        <ul style="list-style:disc;padding-left:1.5rem;margin-bottom:1rem;">
-          <li style="margin-bottom:0.4rem;">Move the slider to your rating and click <em>Submit</em>.</li>
-          <li style="margin-bottom:0.4rem;">There are no right or wrong answers — go with your gut reaction.</li>
-          <li>Work at your own pace.</li>
-        </ul>
+        <ol style="padding-left:1.5rem;margin-bottom:1rem;">
+          <li style="margin-bottom:0.6rem;">
+            <strong>Rate</strong> how much you like it on a scale from
+            <strong>0</strong> (not at all) to <strong>100</strong> (extremely).
+          </li>
+          <li style="margin-bottom:0.6rem;">
+            You'll briefly see <strong>how someone else rated it</strong>.
+          </li>
+          <li style="margin-bottom:0.6rem;">
+            <strong>Rate it again</strong> — your rating can stay the same or change.
+          </li>
+        </ol>
+        <p style="color:#64748b;font-size:0.9rem;">
+          There are no right or wrong answers — go with your honest reaction.
+        </p>
       </div>
     `,
     choices: ["Begin"],
-    on_start: () => logEvent(ctx, "phase1_instructions_shown"),
+    on_start: () => logEvent(ctx, "instructions_shown"),
     on_finish: () => {
-      logEvent(ctx, "phase1_instructions_dismissed");
-      logEvent(ctx, "phase1_start");
-    },
-  };
-
-  const phase1End = {
-    type: HtmlButtonResponse,
-    stimulus: `
-      <div style="max-width:32rem;margin:0 auto;text-align:center;">
-        <h2 style="font-size:1.2rem;font-weight:600;margin-bottom:1rem;">Part 1 complete</h2>
-        <p>Thank you. You've finished rating the artworks.</p>
-        <p style="margin-top:0.75rem;color:#64748b;font-size:0.9rem;">
-          Please inform the researcher that you have finished Part 1.
-        </p>
-      </div>
-    `,
-    choices: ["Continue"],
-    on_start: () => logEvent(ctx, "phase1_end"),
-  };
-
-  const phase2Instructions = {
-    type: HtmlButtonResponse,
-    stimulus: `
-      <div style="max-width:34rem;margin:0 auto;text-align:left;">
-        <h1 style="font-size:1.4rem;font-weight:600;margin-bottom:1rem;text-align:center;">
-          Artwork Rating Task — Part 2
-        </h1>
-        <p style="margin-bottom:1rem;">
-          You'll see the same artworks again. This time, before you rate each one,
-          you'll briefly see how someone else rated it.
-        </p>
-        <ul style="list-style:disc;padding-left:1.5rem;margin-bottom:1rem;">
-          <li style="margin-bottom:0.4rem;">First, look at the other person's rating.</li>
-          <li style="margin-bottom:0.4rem;">Then rate the artwork yourself on the same 0-100 scale.</li>
-          <li>Your ratings can stay the same or change — it's up to you.</li>
-        </ul>
-      </div>
-    `,
-    choices: ["Begin"],
-    on_start: () => logEvent(ctx, "phase2_instructions_shown"),
-    on_finish: () => {
-      logEvent(ctx, "phase2_instructions_dismissed");
-      logEvent(ctx, "phase2_start");
+      logEvent(ctx, "instructions_dismissed");
+      logEvent(ctx, "task_start");
     },
   };
 
@@ -329,12 +322,5 @@ export async function buildTimeline(ctx: TaskContext, _jsPsych: JsPsych) {
     on_finish: () => logEvent(ctx, "timeline_complete"),
   };
 
-  return [
-    phase1Instructions,
-    ...phase1Trials,
-    phase1End,
-    phase2Instructions,
-    ...phase2Trials,
-    endScreen,
-  ];
+  return [instructions, ...trials, endScreen];
 }

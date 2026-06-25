@@ -29,28 +29,27 @@ async function json<T>(res: Response): Promise<T> {
 
 export type Mode = "pilot" | "dev";
 
-export type Artwork = {
+export type Trial = {
   artwork_id: number;
   title: string;
   artist: string;
   year: number;
   wikiart_url: string;
   image_url: string;
+  pair_condition: string;
+  agent1: string;
+  agent2: string;
+  agent1_rating: number;
+  agent2_rating: number;
+  avg_rating: number;
   trial_index: number;
-};
-
-export type Phase2Trial = Artwork & {
-  agent_condition: string;
-  agent_rating: number;
-  is_rng: boolean;
 };
 
 export type CreateSessionResponse = {
   session_id: string;
   session_token: string;
   participant_index: number;
-  phase1_trials: Artwork[];
-  phase2_trials: Phase2Trial[];
+  trials: Trial[];
 };
 
 // ── Session ───────────────────────────────────────────────────────────────────
@@ -58,7 +57,10 @@ export type CreateSessionResponse = {
 export async function createSession(body: {
   participant_id: string;
   mode: Mode;
-  identities?: string;
+  friendly_pair?: string;
+  neutral_pair?: string;
+  friendly_control_pair?: string;
+  neutral_control_pair?: string;
   sc_session_id?: string;
 }): Promise<CreateSessionResponse> {
   const result = await json<CreateSessionResponse>(
@@ -100,9 +102,13 @@ export async function submitRating(
   body: {
     artwork_id: number;
     rating: number;
-    agent_condition?: string;
-    agent_rating?: number;
-    is_rng?: boolean;
+    rating_type?: string;
+    pair_condition?: string;
+    agent1_condition?: string;
+    agent2_condition?: string;
+    agent1_rating?: number;
+    agent2_rating?: number;
+    avg_rating?: number;
     artwork_onset_ms?: number;
     rating_rt_ms?: number;
     trial_index?: number;

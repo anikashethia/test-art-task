@@ -5,10 +5,11 @@
  * This screen is for local dev testing only.
  */
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import TimelineRunner from "./components/TimelineRunner";
-import { createSession } from "./api";
+import { createSession, completeSession } from "./api";
 import type { TaskContext } from "./timeline";
+
 
 export default function App() {
   const [ctx, setCtx] = useState<TaskContext | null>(null);
@@ -27,8 +28,7 @@ export default function App() {
         sessionId: s.session_id,
         token: s.session_token,
         mode: "dev",
-        phase1Trials: s.phase1_trials,
-        phase2Trials: s.phase2_trials,
+        trials: s.trials,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
@@ -37,8 +37,14 @@ export default function App() {
     }
   };
 
+  const handleComplete = useCallback(async () => {
+    if (!ctx) return;
+    await completeSession(ctx.sessionId, ctx.token).catch(console.error);
+    setCtx(null);
+  }, [ctx]);
+
   if (ctx) {
-    return <TimelineRunner ctx={ctx} onComplete={() => setCtx(null)} />;
+    return <TimelineRunner ctx={ctx} onComplete={handleComplete} />;
   }
 
   return (

@@ -10,7 +10,7 @@ Structure:
 
 from datetime import datetime, timezone
 from uuid import uuid4
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, Float, JSON, Boolean
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Float, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
@@ -61,9 +61,13 @@ class Rating(Base):
     block_id: Mapped[str] = mapped_column(ForeignKey("blocks.id"), index=True)
     artwork_id: Mapped[int] = mapped_column(Integer, index=True)
     rating: Mapped[float | None] = mapped_column(Float, nullable=True)
-    agent_condition: Mapped[str | None] = mapped_column(String, nullable=True)
-    agent_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
-    is_rng: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    rating_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    pair_condition: Mapped[str | None] = mapped_column(String, nullable=True)
+    agent1_condition: Mapped[str | None] = mapped_column(String, nullable=True)
+    agent2_condition: Mapped[str | None] = mapped_column(String, nullable=True)
+    agent1_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
+    agent2_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
     artwork_onset_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     rating_rt_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     trial_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
