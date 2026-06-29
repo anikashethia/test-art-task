@@ -1,12 +1,15 @@
-# fly.toml app configuration file generated for social-influence-task on 2026-06-29T18:52:32Z
-#
-# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
-#
-
+# fly.toml app configuration file for social-influence-task
 app = 'social-influence-task'
 primary_region = 'lax'
 
 [build]
+
+[env]
+  DATABASE_URL = "sqlite:////data/social_influence.db"
+  FRONTEND_ORIGIN = "https://social-influence-task.fly.dev"
+
+# Set via: fly secrets set PROLIFIC_COMPLETION_URL=https://...
+# Never hardcode study completion URLs here
 
 [http_service]
   internal_port = 8080
@@ -20,4 +23,9 @@ primary_region = 'lax'
   memory = '1gb'
   cpu_kind = 'shared'
   cpus = 1
-  memory_mb = 256
+
+# Persistent volume for SQLite data
+# Create once with: fly volumes create social_influence_data --size 1 --region lax
+[[mounts]]
+  source = "social_influence_data"
+  destination = "/data"

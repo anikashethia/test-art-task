@@ -14,11 +14,13 @@ Endpoints:
 import os
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session as DBSession
 
@@ -289,3 +291,11 @@ def complete_session(
     session.ended_at = datetime.now(timezone.utc)
     db.commit()
     return CompleteSessionResponse(prolific_completion_url=PROLIFIC_COMPLETION_URL)
+
+
+# ── Static file serving (production) ─────────────────────────────────────────
+# Serve the built Vite frontend. Mounted last so all API routes take priority.
+# Not present in local dev (frontend runs on its own Vite dev server).
+_dist = Path(__file__).parent.parent / "frontend" / "dist"
+if _dist.exists():
+    app.mount("/", StaticFiles(directory=str(_dist), html=True), name="static")

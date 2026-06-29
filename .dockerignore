@@ -1,5 +1,12 @@
+**/.venv
+**/node_modules
+**/dist
+**/__pycache__
+**/*.pyc
+**/.env
+**/*.db
+**/.DS_Store
+.git
+.gitignore
 fly.toml
-.git/
-__pycache__/
 .envrc
-.venv/
