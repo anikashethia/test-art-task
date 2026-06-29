@@ -1,10 +1,10 @@
-# fly.toml app configuration file generated for social-influence-task on 2026-06-29T18:52:32Z
+# fly.toml app configuration file generated for test-social-influence-task on 2026-06-29T19:13:37Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'social-influence-task'
-primary_region = 'lax'
+app = 'test-social-influence-task'
+primary_region = 'ams'
 
 [build]
 
