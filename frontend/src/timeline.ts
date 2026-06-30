@@ -62,8 +62,9 @@ function sliderHtml(stimulus: string): string {
 
 function artworkImageHtml(trial: Artwork): string {
   const maxW = "600px";
-  const maxH = "480px";
-  const placeholderH = "360px";
+  // Viewport-relative max-height ensures the agent rating bar below is never cut off
+  const maxH = "min(380px, 38vh)";
+  const placeholderH = "min(280px, 34vh)";
   if (trial.image_url) {
     return `<img src="${trial.image_url}"
                  alt="${trial.title}"
@@ -128,10 +129,33 @@ function addSliderValueDisplay() {
   slider.addEventListener('input', () => { display.textContent = slider.value; });
 }
 
+function addScreenOverlays(trialIndex: number, total: number, durationMs: number) {
+  const container = document.querySelector('.jspsych-display-element') || document.body;
+
+  // Progress counter — top right
+  const progress = document.createElement('div');
+  progress.style.cssText = 'position:fixed;top:1rem;right:1.5rem;font-size:0.85rem;color:#94a3b8;z-index:100;';
+  progress.textContent = `${trialIndex + 1} / ${total}`;
+  container.appendChild(progress);
+
+  // Countdown timer — top left
+  const timer = document.createElement('div');
+  timer.style.cssText = 'position:fixed;top:1rem;left:1.5rem;font-size:0.85rem;color:#94a3b8;z-index:100;';
+  const t0 = performance.now();
+  timer.textContent = `${Math.ceil(durationMs / 1000)}s`;
+  const id = setInterval(() => {
+    const s = Math.max(0, Math.ceil((durationMs - (performance.now() - t0)) / 1000));
+    timer.textContent = `${s}s`;
+    if (s <= 0) clearInterval(id);
+  }, 250);
+  setTimeout(() => clearInterval(id), durationMs + 500);
+  container.appendChild(timer);
+}
+
 // ── Trials (rate → reveal → re-rate → ITI) ───────────────────────────────────
 
 function buildTrials(ctx: TaskContext, blockId: string, _jsPsych: JsPsych) {
-  const revealMs = ctx.revealDurationMs ?? 4000;
+  const revealMs = ctx.revealDurationMs ?? 5000;
   const maxRatingMs = ctx.maxRatingMs ?? 10000;
 
   const missedStimulus = `
@@ -148,6 +172,7 @@ function buildTrials(ctx: TaskContext, blockId: string, _jsPsych: JsPsych) {
     let rerateOnsetMs: number | null = null;
     let initialMissed = false;
     let rerateMissed = false;
+    let initialRatingValue: number = 50;
 
     const initialRatingTrial = {
       type: HtmlSliderResponse,
@@ -159,7 +184,10 @@ function buildTrials(ctx: TaskContext, blockId: string, _jsPsych: JsPsych) {
       require_movement: true,
       button_label: "Submit",
       trial_duration: maxRatingMs,
-      on_load: addSliderValueDisplay,
+      on_load: () => {
+        addSliderValueDisplay();
+        addScreenOverlays(trial.trial_index, ctx.trials.length, maxRatingMs);
+      },
       on_start: () => {
         artworkOnsetMs = performance.now();
         logEvent(ctx, "initial_rating_onset", { artwork_id: trial.artwork_id, trial_index: trial.trial_index }, blockId);
@@ -171,6 +199,7 @@ function buildTrials(ctx: TaskContext, blockId: string, _jsPsych: JsPsych) {
           return;
         }
         initialMissed = false;
+        initialRatingValue = data.response;
         logEvent(ctx, "initial_rating_response", {
           artwork_id: trial.artwork_id,
           rating: data.response,
@@ -200,6 +229,7 @@ function buildTrials(ctx: TaskContext, blockId: string, _jsPsych: JsPsych) {
       `,
       choices: "NO_KEYS" as const,
       trial_duration: revealMs,
+      on_load: () => addScreenOverlays(trial.trial_index, ctx.trials.length, revealMs),
       on_start: () => {
         logEvent(ctx, "reveal_onset", {
           artwork_id: trial.artwork_id,
@@ -225,7 +255,17 @@ function buildTrials(ctx: TaskContext, blockId: string, _jsPsych: JsPsych) {
       require_movement: true,
       button_label: "Submit",
       trial_duration: maxRatingMs,
-      on_load: addSliderValueDisplay,
+      on_load: () => {
+        // Pre-fill slider with participant's initial rating
+        const slider = document.querySelector('input[type="range"]') as HTMLInputElement | null;
+        if (slider) {
+          slider.value = String(Math.round(initialRatingValue));
+          slider.dispatchEvent(new Event('input', { bubbles: true }));
+          slider.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        addSliderValueDisplay();
+        addScreenOverlays(trial.trial_index, ctx.trials.length, maxRatingMs);
+      },
       on_start: () => { rerateOnsetMs = performance.now(); },
       on_finish: async (data: { response: number | null; rt: number | null }) => {
         if (data.response === null) {
@@ -299,6 +339,7 @@ export async function buildTimeline(ctx: TaskContext, _jsPsych: JsPsych) {
           <li style="margin-bottom:0.6rem;">
             <strong>Rate</strong> how much you like it on a scale from
             <strong>0</strong> (not at all) to <strong>100</strong> (extremely).
+            You have <strong>10 seconds</strong> to respond — a timer will count down in the top-left corner.
           </li>
           <li style="margin-bottom:0.6rem;">
             You'll briefly see <strong>how someone else rated it</strong>.
