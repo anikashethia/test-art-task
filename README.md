@@ -10,6 +10,12 @@ Runs **after** the chat task in the same lab session. Part of the Social Connect
 
 ---
 
+# Ongoing To Do / Things to Consider Later
+
+- [] counterbalancing
+
+---
+
 ## Task Design
 
 **Trial structure** (per artwork, self-paced):
