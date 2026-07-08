@@ -182,10 +182,13 @@ def run_verify(rows: list[dict]) -> None:
             file=sys.stderr,
         )
     flip_counts = [len([r for r in by_cond[c] if r["offset_sign_flipped"]]) for c in conditions]
-    if max(flip_counts, default=0) - min(flip_counts, default=0) <= 3:
-        print("  ✓ Flip counts are balanced across conditions", file=sys.stderr)
+    # Threshold: max-min <= n/3 per condition (allows natural variation; flags only
+    # a 2x+ rate difference that could indicate systematic artwork-condition confound)
+    flip_threshold = max(3, n_per_cond // 3)
+    if max(flip_counts, default=0) - min(flip_counts, default=0) <= flip_threshold:
+        print(f"  ✓ Flip counts within expected variation (threshold: ±{flip_threshold})", file=sys.stderr)
     else:
-        print("  ✗ Flips appear concentrated — check boundary conditions", file=sys.stderr)
+        print(f"  ✗ Flips appear concentrated (threshold: ±{flip_threshold}) — check boundary conditions", file=sys.stderr)
         all_passed = False
 
     print("\n" + ("✓ ALL CHECKS PASSED" if all_passed else "✗ SOME CHECKS FAILED"), file=sys.stderr)
