@@ -193,6 +193,9 @@ function buildTrials(ctx: TaskContext, blockId: string, _jsPsych: JsPsych, respo
     let artworkOnsetMs: number | null = null;
     let rerateOnsetMs: number | null = null;
     let initialRatingValue: number = 50;
+    let computedAvgRating: number = 50;
+    let deliveredSign: number = trial.offset_sign;
+    let offsetSignFlipped: boolean = false;
 
     const initialRatingTrial = {
       type: HtmlSliderResponse,
@@ -232,6 +235,17 @@ function buildTrials(ctx: TaskContext, blockId: string, _jsPsych: JsPsych, respo
         initialRatingValue = data.response;
         responseData.initialRatings.push(data.response);
         responseData.initialRTs.push(data.rt);
+
+        // Compute participant-relative avg_rating with boundary-flip logic
+        const mag  = trial.offset_magnitude;
+        let   sign = trial.offset_sign;
+        const flip = (sign === -1 && data.response < mag)
+                  || (sign ===  1 && data.response > 100 - mag);
+        if (flip) sign = -sign;
+        computedAvgRating  = Math.max(0, Math.min(100, Math.round(data.response + sign * mag)));
+        deliveredSign      = sign;
+        offsetSignFlipped  = flip;
+
         logEvent(ctx, "initial_rating_response", {
           artwork_id: trial.artwork_id,
           rating: data.response,
@@ -251,10 +265,10 @@ function buildTrials(ctx: TaskContext, blockId: string, _jsPsych: JsPsych, respo
 
     const revealTrial = {
       type: HtmlKeyboardResponse,
-      stimulus: `
+      stimulus: () => `
         <div style="max-width:54rem;margin:0 auto;text-align:center;">
           ${artworkContainerHtml(trial)}
-          ${agentPairRevealHtml(trial.agent1, trial.agent1_code, trial.agent2, trial.agent2_code, trial.avg_rating)}
+          ${agentPairRevealHtml(trial.agent1, trial.agent1_code, trial.agent2, trial.agent2_code, computedAvgRating)}
         </div>
       `,
       choices: "NO_KEYS" as const,
@@ -266,7 +280,10 @@ function buildTrials(ctx: TaskContext, blockId: string, _jsPsych: JsPsych, respo
           pair_condition: trial.pair_condition,
           agent1: trial.agent1,
           agent2: trial.agent2,
-          avg_rating: trial.avg_rating,
+          avg_rating: computedAvgRating,
+          offset_magnitude: trial.offset_magnitude,
+          offset_sign: deliveredSign,
+          offset_sign_flipped: offsetSignFlipped,
           trial_index: trial.trial_index,
         }, blockId);
       },
@@ -320,7 +337,7 @@ function buildTrials(ctx: TaskContext, blockId: string, _jsPsych: JsPsych, respo
           pair_condition: trial.pair_condition,
           agent1: trial.agent1,
           agent2: trial.agent2,
-          avg_rating: trial.avg_rating,
+          avg_rating: computedAvgRating,
           rt_ms: data.rt,
           trial_index: trial.trial_index,
         }, blockId);
@@ -331,9 +348,11 @@ function buildTrials(ctx: TaskContext, blockId: string, _jsPsych: JsPsych, respo
           pair_condition: trial.pair_condition,
           agent1_condition: trial.agent1_code,
           agent2_condition: trial.agent2_code,
-          agent1_rating: trial.agent1_rating,
-          agent2_rating: trial.agent2_rating,
-          avg_rating: trial.avg_rating,
+          avg_rating: computedAvgRating,
+          offset_magnitude: trial.offset_magnitude,
+          offset_sign: deliveredSign,
+          offset_sign_flipped: offsetSignFlipped,
+          base_offset_index: trial.base_offset_index,
           artwork_onset_ms: rerateOnsetMs ?? undefined,
           rating_rt_ms: data.rt,
           trial_index: trial.trial_index,

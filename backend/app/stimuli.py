@@ -19,13 +19,18 @@ import json
 import random
 from pathlib import Path
 
-STIMULI_DIR        = Path(__file__).parent / "stimuli"
-ARTWORKS_FILE      = STIMULI_DIR / "artworks.json"
-AGENT_RATINGS_FILE = STIMULI_DIR / "agent_ratings.json"
-CB_FILE            = Path(__file__).parent / "counterbalancing.json"
+STIMULI_DIR     = Path(__file__).parent / "stimuli"
+ARTWORKS_FILE   = STIMULI_DIR / "artworks.json"
+CB_FILE         = Path(__file__).parent / "counterbalancing.json"
 
 CONDITION_TYPES = ["friendly", "neutral", "friendly_control", "neutral_control"]
 N_CONDITIONS    = len(CONDITION_TYPES)
+
+# Offset design constants
+OFFSET_N      = 30   # offsets per condition (= artworks per condition in full mode)
+OFFSET_MAG_LO = 20
+OFFSET_MAG_HI = 35
+OFFSET_N_POS  = 15   # exactly half positive, half negative
 
 # Avatar dicts used in dev mode (config 1 values)
 DEFAULT_PAIRS: dict[str, tuple[dict, dict]] = {
@@ -40,12 +45,6 @@ DEFAULT_PAIRS: dict[str, tuple[dict, dict]] = {
 
 def load_artworks() -> list[dict]:
     return json.loads(ARTWORKS_FILE.read_text())
-
-
-def load_agent_ratings() -> dict[str, dict[str, int]]:
-    if AGENT_RATINGS_FILE.exists():
-        return json.loads(AGENT_RATINGS_FILE.read_text())
-    return {}
 
 
 def load_counterbalancing() -> list[dict]:
@@ -78,15 +77,30 @@ def get_pairs_for_config(config_index: int) -> dict[str, tuple[dict, dict]]:
     }
 
 
-# ── Agent ratings ─────────────────────────────────────────────────────────────
+# ── Participant-relative offset precomputation ────────────────────────────────
 
-def get_agent_rating(avatar_id: str, artwork_id: int, ratings: dict) -> int:
-    avatar_ratings = ratings.get(avatar_id, {})
-    rating = avatar_ratings.get(str(artwork_id))
-    if rating is not None:
-        return int(rating)
-    rng = random.Random(hash(avatar_id) + artwork_id)
-    return rng.randint(30, 80)
+def build_base_offsets(participant_index: int) -> list[tuple[int, int]]:
+    """30 (magnitude, sign) pairs seeded by participant_index.
+    Exactly OFFSET_N_POS positive and OFFSET_N_POS negative entries."""
+    rng = random.Random(participant_index)
+    magnitudes = [rng.randint(OFFSET_MAG_LO, OFFSET_MAG_HI) for _ in range(OFFSET_N)]
+    signs = [1] * OFFSET_N_POS + [-1] * (OFFSET_N - OFFSET_N_POS)
+    rng.shuffle(signs)
+    return list(zip(magnitudes, signs))
+
+
+def get_condition_offsets(
+    participant_index: int, condition: str, n: int
+) -> list[tuple[int, int, int]]:
+    """Return n (base_offset_index, magnitude, sign) triples for one condition.
+    Draws from the participant's base set shuffled independently per condition,
+    so every condition has the same underlying distribution.
+    base_offset_index is the position in the original base set, for auditability."""
+    base = build_base_offsets(participant_index)
+    indexed = list(enumerate(base))  # [(original_idx, (magnitude, sign)), ...]
+    rng = random.Random(participant_index + hash(condition))
+    rng.shuffle(indexed)
+    return [(idx, mag, sign) for idx, (mag, sign) in indexed[:n]]
 
 
 # ── Artwork assignment ────────────────────────────────────────────────────────
@@ -113,7 +127,6 @@ def build_trials(
         pairs = DEFAULT_PAIRS
 
     assignment = assign_artworks_to_conditions(participant_index)
-    ratings    = load_agent_ratings()
 
     per_condition: int | None = None
     if trial_limit is not None:
@@ -129,25 +142,25 @@ def build_trials(
             )
             artworks = condition_rng.sample(artworks, min(per_condition, len(artworks)))
 
-        for artwork in artworks:
-            r1  = get_agent_rating(agent1["id"], artwork["id"], ratings)
-            r2  = get_agent_rating(agent2["id"], artwork["id"], ratings)
-            avg = round((r1 + r2) / 2)
+        offsets = get_condition_offsets(participant_index, condition, len(artworks))
+
+        for i, artwork in enumerate(artworks):
+            base_idx, magnitude, sign = offsets[i]
             trials.append({
-                "artwork_id":     artwork["id"],
-                "title":          artwork["title"],
-                "artist":         artwork["artist"],
-                "year":           artwork["year"],
-                "image_url":      artwork.get("image_url", ""),
-                "wikiart_url":    artwork.get("wikiart_url", ""),
-                "pair_condition": condition,
-                "agent1":         agent1["name"],
-                "agent1_code":    agent1["id"],
-                "agent2":         agent2["name"],
-                "agent2_code":    agent2["id"],
-                "agent1_rating":  r1,
-                "agent2_rating":  r2,
-                "avg_rating":     avg,
+                "artwork_id":         artwork["id"],
+                "title":              artwork["title"],
+                "artist":             artwork["artist"],
+                "year":               artwork["year"],
+                "image_url":          artwork.get("image_url", ""),
+                "wikiart_url":        artwork.get("wikiart_url", ""),
+                "pair_condition":     condition,
+                "agent1":             agent1["name"],
+                "agent1_code":        agent1["id"],
+                "agent2":             agent2["name"],
+                "agent2_code":        agent2["id"],
+                "offset_magnitude":   magnitude,
+                "offset_sign":        sign,
+                "base_offset_index":  base_idx,
             })
 
     rng = random.Random(seed if seed is not None else participant_index)

@@ -10,7 +10,7 @@ Structure:
 
 from datetime import datetime, timezone
 from uuid import uuid4
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Float, JSON
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Float, JSON, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
@@ -68,6 +68,10 @@ class Rating(Base):
     agent1_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
     agent2_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
     avg_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
+    offset_magnitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    offset_sign: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    offset_sign_flipped: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    base_offset_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
     artwork_onset_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     rating_rt_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     trial_index: Mapped[int | None] = mapped_column(Integer, nullable=True)

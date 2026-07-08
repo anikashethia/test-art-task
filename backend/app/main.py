@@ -11,6 +11,7 @@ Endpoints:
   GET  /health                            — health check
 """
 
+import logging
 import os
 import time
 from contextlib import asynccontextmanager
@@ -110,6 +111,10 @@ class SubmitRatingBody(BaseModel):
     agent1_rating: float | None = None
     agent2_rating: float | None = None
     avg_rating: float | None = None
+    offset_magnitude: float | None = None
+    offset_sign: int | None = None
+    offset_sign_flipped: bool | None = None
+    base_offset_index: int | None = None
     artwork_onset_ms: float | None = None
     rating_rt_ms: float | None = None
     trial_index: int | None = None
@@ -213,6 +218,38 @@ def submit_rating(
 
     t_ms = body.t_client_ms if body.t_client_ms is not None else session_local_ms(session)
 
+    if (
+        body.rating_type == "rerate"
+        and body.avg_rating is not None
+        and body.offset_sign is not None
+        and body.offset_magnitude is not None
+    ):
+        init_row = (
+            db.query(models.Rating)
+            .filter(
+                models.Rating.block_id == block_id,
+                models.Rating.artwork_id == body.artwork_id,
+                models.Rating.rating_type == "initial",
+            )
+            .first()
+        )
+        if init_row is not None and init_row.rating is not None:
+            expected = max(0.0, min(100.0, round(init_row.rating + body.offset_sign * body.offset_magnitude)))
+            if abs(expected - body.avg_rating) > 0.5:
+                logging.warning(
+                    "avg_rating mismatch — participant_id=%s trial_index=%s artwork_id=%s "
+                    "initial_rating=%.1f offset_sign=%d offset_magnitude=%.1f "
+                    "expected=%.0f submitted=%.1f",
+                    session.participant_id,
+                    body.trial_index,
+                    body.artwork_id,
+                    init_row.rating,
+                    body.offset_sign,
+                    body.offset_magnitude,
+                    expected,
+                    body.avg_rating,
+                )
+
     rating = models.Rating(
         block_id=block_id,
         artwork_id=body.artwork_id,
@@ -224,6 +261,10 @@ def submit_rating(
         agent1_rating=body.agent1_rating,
         agent2_rating=body.agent2_rating,
         avg_rating=body.avg_rating,
+        offset_magnitude=body.offset_magnitude,
+        offset_sign=body.offset_sign,
+        offset_sign_flipped=body.offset_sign_flipped,
+        base_offset_index=body.base_offset_index,
         artwork_onset_ms=body.artwork_onset_ms,
         rating_rt_ms=body.rating_rt_ms,
         trial_index=body.trial_index,

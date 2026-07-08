@@ -41,9 +41,9 @@ export type Trial = {
   agent1_code: string;
   agent2: string;
   agent2_code: string;
-  agent1_rating: number;
-  agent2_rating: number;
-  avg_rating: number;
+  offset_magnitude: number;
+  offset_sign: number;
+  base_offset_index: number;
   trial_index: number;
 };
 
@@ -110,6 +110,10 @@ export async function submitRating(
     agent1_rating?: number;
     agent2_rating?: number;
     avg_rating?: number;
+    offset_magnitude?: number;
+    offset_sign?: number;
+    offset_sign_flipped?: boolean;
+    base_offset_index?: number;
     artwork_onset_ms?: number;
     rating_rt_ms?: number;
     trial_index?: number;
