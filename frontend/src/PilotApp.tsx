@@ -25,6 +25,14 @@ type Phase =
   | { name: "running"; ctx: TaskContext }
   | { name: "complete"; prolificUrl: string };
 
+const SESSION_KEY = (pid: string) => `art_task_session_${pid}`;
+
+type StoredSession = {
+  session_id: string;
+  session_token: string;
+  trials: unknown[];
+};
+
 export default function PilotApp() {
   const [phase, setPhase] = useState<Phase>({ name: "loading" });
 
@@ -34,11 +42,29 @@ export default function PilotApp() {
       const pid = params.get("PROLIFIC_PID") ?? params.get("prolific_pid") ?? "PROLIFIC_ANON";
       const sc_session_id = params.get("sc_session_id") ?? undefined;
 
+      // Reuse an in-progress session from this tab if one exists, so a
+      // refresh doesn't waste a counterbalancing slot or create an orphan.
+      const stored = sessionStorage.getItem(SESSION_KEY(pid));
+      if (stored) {
+        const { session_id, session_token, trials } = JSON.parse(stored) as StoredSession;
+        setPhase({
+          name: "running",
+          ctx: { sessionId: session_id, token: session_token, mode: "full", trials: trials as never },
+        });
+        return;
+      }
+
       const s = await createSession({
         participant_id: pid,
         mode: "full",
         sc_session_id,
       });
+
+      sessionStorage.setItem(SESSION_KEY(pid), JSON.stringify({
+        session_id: s.session_id,
+        session_token: s.session_token,
+        trials: s.trials,
+      }));
 
       setPhase({
         name: "running",
@@ -53,6 +79,9 @@ export default function PilotApp() {
 
   const handleComplete = useCallback(async () => {
     if (phase.name !== "running") return;
+    const params = new URLSearchParams(window.location.search);
+    const pid = params.get("PROLIFIC_PID") ?? params.get("prolific_pid") ?? "PROLIFIC_ANON";
+    sessionStorage.removeItem(SESSION_KEY(pid));
     try {
       const { prolific_completion_url } = await completeSession(phase.ctx.sessionId, phase.ctx.token);
       setPhase({ name: "complete", prolificUrl: prolific_completion_url });
