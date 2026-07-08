@@ -432,12 +432,15 @@ export async function buildTimeline(ctx: TaskContext, _jsPsych: JsPsych) {
             <strong>0</strong> (not at all) to <strong>100</strong> (extremely).
           </li>
           <li style="margin-bottom:0.6rem;">
-            You'll briefly see <strong>how someone else rated it</strong>.
+            You'll briefly see <strong>the average rating given by two AI agents</strong>.
           </li>
           <li style="margin-bottom:0.6rem;">
             <strong>Rate it again</strong> — your rating can stay the same or change.
           </li>
         </ol>
+        <p style="margin-bottom:1rem;">
+          The pair of agents giving feedback will change throughout the task — some you'll recognize from earlier, others you haven't met before.
+        </p>
         <p style="color:#64748b;font-size:0.9rem;">
           There are no right or wrong answers — go with your honest reaction.
         </p>
