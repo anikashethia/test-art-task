@@ -10,10 +10,6 @@ Runs **after** the chat task in the same lab session. Part of the Social Connect
 
 ---
 
-# Ongoing To Do / Things to Consider Later
-
-- [] counterbalancing
-
 ---
 
 ## Task Design
@@ -29,6 +25,19 @@ Runs **after** the chat task in the same lab session. Part of the Social Connect
 - All artworks render in a standardised 580×360 px box (`object-fit:contain`) so painting sizes are uniform across trials
 - Agent avatars are 210 px circles
 - Trial order is randomly shuffled, seeded by participant number (reproducible per config)
+
+**Agent feedback (avg_rating)**
+
+The average shown to the participant is computed relative to their own initial rating:
+```
+avg_rating = clip(initial_rating + sign × magnitude, 10, 90)
+```
+- `magnitude` is drawn from uniform(20, 35) for 27 of the 30 trials per condition, and uniform(1, 10) for the remaining **3 close-agreement trials** (where the agents' rating lands within ~10 pts of the participant's own)
+- `sign` is +1 or −1; exactly 15 of each per condition
+- If the offset would push avg_rating outside [10, 90], the sign is flipped inward (`offset_sign_flipped = true`)
+- `avg_rating` is always in [10, 90]
+
+Both the magnitude and base sign are fixed at session creation (seeded by participant index), so the manipulation strength is identical across all 4 conditions by construction.
 
 **4 pair-conditions** (30 artworks each, 120 total):
 
@@ -52,9 +61,11 @@ Each config assigns one of the 16 named avatars (4 races × 2 genders × 2 exemp
 **Influence score** (computed at analysis time):
 ```
 Δ = rerate − initial_rating
-normalised_influence = Δ / |avg_agent_rating − initial_rating|
+normalised_influence = Δ / |avg_rating − initial_rating|
 ```
-0 = no influence, 1 = full conformity, negative = contrast. NULL when initial rating equals agent average.
+0 = no influence, 1 = full conformity, negative = contrast. NULL when initial rating equals avg_rating (rare given [10, 90] bounds and non-zero magnitudes).
+
+> **Note on close-agreement trials:** The 3 close-agreement trials per condition have magnitudes of 1–10, so the denominator `|avg_rating − initial_rating|` is small and `norm_influence` will be large even for modest re-rating shifts. Recommend excluding or analysing these trials separately.
 
 ---
 
@@ -143,7 +154,9 @@ art-task/
 │       ├── counterbalancing.json    # 24-config avatar assignment table
 │       └── stimuli/
 │           ├── artworks.json        # 120 artwork definitions + image URLs
-│           └── agent_ratings.json   # Pre-generated agent ratings (optional)
+│           └── agent_ratings.json   # Legacy file — not used (ratings are participant-relative)
+├── scripts/
+│   └── dump_session.py              # Diagnostic: dump + verify a session's trial data as CSV
 ├── frontend/
 │   ├── tailwind.config.js           # Tailwind content paths
 │   ├── postcss.config.js            # PostCSS / Tailwind wiring
@@ -255,7 +268,11 @@ ORDER BY s.participant_id;
 | `pair_condition` | null | `friendly` / `neutral` / `friendly_control` / `neutral_control` |
 | `agent1_condition` | null | agent 1 avatar ID |
 | `agent2_condition` | null | agent 2 avatar ID |
-| `avg_rating` | null | average shown to participant |
+| `avg_rating` | null | average shown to participant (always in [10, 90]) |
+| `offset_magnitude` | null | magnitude of the offset applied (1–10 close, 20–35 far) |
+| `offset_sign` | null | delivered sign (+1 / −1; may differ from assigned if flipped) |
+| `offset_sign_flipped` | null | `true` if sign was flipped inward to stay within [10, 90] |
+| `base_offset_index` | null | index into participant's base offset set (0–29); for audit |
 | `rating_rt_ms` | RT from screen onset to submit | same |
 | `trial_index` | position in randomised order | same |
 
